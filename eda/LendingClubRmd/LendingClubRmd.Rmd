@@ -1,0 +1,824 @@
+---
+title: "Lending Club Demonstration"
+author: "DXC Data Science Team"
+date: "`r Sys.Date()`"
+output: 
+    dxcrmd::html_DXC
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warning = FALSE)
+```
+
+
+# Introduction 
+
+Qui n'a jamais rêvé d'emprunter ou de prêter de l'argent à son voisin en toute quiétude et de manière tout à fait légale. 
+
+Lending Club, marketplace américaine de prêt de particulier à particulier vous offre aujourd'hui cette possibilité. Cette plateforme se positionne non pas en tant que banque mais comme facilitateur de mise-en-relation et a déja aidé plus d'1,5 millions d'emprunteurs. 
+
+En tant qu'emprunteur, ce site vous permet de faire une demande de prêt en un click et surtout ce n'est pas une banque qui décide du sort de votre prêt mais bel et bien des investisseurs particuliers comme vous et moi. 
+
+Si le bénéfice pour l'emprunteur semble evident, nous nous sommes posés la question de l'interêt pour l'investisseur. Si j'avais de l'argent, est-ce que j'investirai chez Lending Club et qu'elle serait ma stratégie? 
+
+Pour répondre à ces questions et "aider" ses investisseurs à prendre les meilleurs décisions, Lending Club met à disposition une base de données avec de nombreuses charactéristiques sur des prêts terminés ou encore en cours. 
+
+# Vision globale des données 
+
+```{r Librairies loading or installing}
+
+packages <- c("tidyverse", "stringr", "tidytext", "fiftystater", 
+              "data.table", "DescTools", "wordcloud", "lubridate",
+              "RColorBrewer", "maps", "corrplot", "mapproj", 
+              "Rttf2pt1","xlsx", "broom", "dxcrmd", "devtools") 
+
+
+for (package in packages) {
+    if (!require(package, character.only=T, quietly=T)) {
+        install.packages(package, dependencies = TRUE,
+                         repos = "https://cran.rstudio.com/")
+        library(package, character.only=T)
+    } else {
+        library(package, character.only=T)
+    }
+}
+
+```
+
+```{r Read Data, cache=TRUE}
+
+data_lending <- read_csv("../../inputs/loan.csv", 
+  col_types = cols(
+  id = col_character(),
+  member_id = col_character(),
+  loan_amnt = col_double(),
+  funded_amnt = col_double(),
+  funded_amnt_inv = col_double(),
+  term = col_character(),
+  int_rate = col_double(),
+  installment = col_double(),
+  grade = col_character(),
+  sub_grade = col_character(),
+  emp_title = col_character(),
+  emp_length = col_character(),
+  home_ownership = col_character(),
+  annual_inc = col_double(),
+  verification_status = col_character(),
+  issue_d = col_character(),
+  loan_status = col_character(),
+  pymnt_plan = col_character(),
+  url = col_character(),
+  desc = col_character(),
+  purpose = col_character(),
+  title = col_character(),
+  zip_code = col_character(),
+  addr_state = col_character(),
+  dti = col_double(),
+  delinq_2yrs = col_double(),
+  earliest_cr_line = col_character(),
+  inq_last_6mths = col_double(),
+  mths_since_last_delinq = col_double(),
+  mths_since_last_record = col_double(),
+  open_acc = col_double(),
+  pub_rec = col_double(),
+  revol_bal = col_double(),
+  revol_util = col_double(),
+  total_acc = col_double(),
+  initial_list_status = col_character(),
+  out_prncp = col_double(),
+  out_prncp_inv = col_double(),
+  total_pymnt = col_double(),
+  total_pymnt_inv = col_double(),
+  total_rec_prncp = col_double(),
+  total_rec_int = col_double(),
+  total_rec_late_fee = col_double(),
+  recoveries = col_double(),
+  collection_recovery_fee = col_double(),
+  last_pymnt_d = col_character(),
+  last_pymnt_amnt = col_double(),
+  next_pymnt_d = col_character(),
+  last_credit_pull_d = col_character(),
+  collections_12_mths_ex_med = col_double(),
+  mths_since_last_major_derog = col_character(),
+  policy_code = col_double(),
+  application_type = col_character(),
+  annual_inc_joint = col_character(),
+  dti_joint = col_character(),
+  verification_status_joint = col_character(),
+  acc_now_delinq = col_double(),
+  tot_coll_amt = col_character(),
+  tot_cur_bal = col_character(),
+  open_acc_6m = col_character(),
+  open_il_6m = col_character(),
+  open_il_12m = col_character(),
+  open_il_24m = col_character(),
+  mths_since_rcnt_il = col_character(),
+  total_bal_il = col_character(),
+  il_util = col_character(),
+  open_rv_12m = col_character(),
+  open_rv_24m = col_character(),
+  max_bal_bc = col_character(),
+  all_util = col_character(),
+  total_rev_hi_lim = col_double(),
+  inq_fi = col_character(),
+  total_cu_tl = col_character(),
+  inq_last_12m = col_character()
+))
+```
+Cette base de données a été récupérée sur Kaggle : https://www.kaggle.com/wendykan/lending-club-loan-data/data
+
+La table de données contient `r count(data_lending) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` observations et `r ncol(data_lending)` charactéristiques sur les prêts (dont 2 identifiants). 
+
+Les variables peuvent être catégorisées selon trois axes (la catégorisation exacte et description de chaque variable se trouvent dans le fichier LCDataDecription_final.xlsx) : 
+- liées au crédit en lui-même (ex: amount of the loan , issue date, etc...)
+- liées à l'emprunteur (ex: income, job title, etc...)
+- liées à la qualité de l'emprunteur (ex: dti ratio, month since last delinquence, etc...)
+
+L'analyse sera effectuée en conservant les variables ayant moins de 70% de valeurs manquantes. 
+Comme il y a un echantillon très peu représentatif de prêt joint (seulement `r data_lending %>% filter(application_type == "JOINT") %>% count() %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` observations), nous nous concentrerons sur les prêts individuels. 
+
+```{r Delete columns with too many missing values}
+
+# Calculate proportion of missing values for each variable
+
+missing_table <-  data_lending %>% 
+                  map_dbl(~ round(sum(is.na(.x))/length(.x), digits=2)) %>%
+                  data_frame(name=names(.), proportion=.) 
+
+delete_missing <- missing_table %>% 
+                  filter(proportion>0.7) %>%
+                  select(name) %>% 
+                  unlist()
+
+# Delete columns with more than 70 percents of missing values
+
+data_lending_deleted_missing <- data_lending %>%
+                                select_if( !(colnames(data_lending)
+                                             %in% delete_missing))
+
+```
+
+```{r Feature cleaning, cache=TRUE}
+
+# Extract numbers from term
+data_clean <- data_lending_deleted_missing %>% 
+              mutate(term= as.numeric(str_extract
+                                     (term, "[[:digit:]]+"))) 
+
+# Extract numbers from employment length
+data_clean <- data_clean %>% 
+              mutate(emp_length = as.numeric(str_extract
+                                           (emp_length, "[[:digit:]]+")))
+
+# Transform Issue Date into date format
+
+months_dict <- c("01", "02", "03", "4", "5", "6", "7", "8", 
+                 "9", "10", "11", "12")
+names(months_dict) <- c("Jan", "Feb", "Mar", "Apr", "May",
+                        "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+data_clean <- data_clean %>% 
+              separate(issue_d, c("m_d", "y_d"), sep = "-") %>% 
+              mutate(d_d = "01") %>% 
+              mutate(good_m = months_dict[m_d]) %>% 
+              unite(issue_d, d_d, good_m, y_d, sep="-") %>% 
+              mutate(issue_d = dmy(issue_d)) %>% 
+              select(-m_d)
+
+
+# Transform Earliest Credit Line into date format
+data_clean <- data_clean %>% 
+              separate(earliest_cr_line, c("m_d", "y_d"), sep = "-") %>% 
+              mutate(d_d = "01") %>% 
+              mutate(good_m = months_dict[m_d]) %>% 
+              unite(earliest_cr_line, d_d, good_m, y_d, sep="-") %>% 
+              mutate(earliest_cr_line = dmy(earliest_cr_line)) %>% 
+              select(-m_d)
+
+
+# Transform Last payment into date format
+  
+data_clean <- data_clean %>% 
+              separate(last_pymnt_d, c("m_d", "y_d"), sep = "-") %>% 
+              mutate(d_d = "01") %>% 
+              mutate(good_m = months_dict[m_d]) %>% 
+              unite(last_pymnt_d, d_d, good_m, y_d, sep="-") %>% 
+              mutate(last_pymnt_d = dmy(last_pymnt_d)) %>% 
+              select(-m_d)
+
+
+# Transform Last Credit Pull into date format
+data_clean <- data_clean %>% 
+              separate(last_credit_pull_d, c("m_d", "y_d"), sep = "-") %>% 
+              mutate(d_d = "01") %>% 
+              mutate(good_m = months_dict[m_d]) %>% 
+              unite(last_credit_pull_d, d_d, good_m, y_d, sep="-") %>% 
+              mutate(last_credit_pull_d = dmy(last_credit_pull_d)) %>% 
+              select(-m_d)
+
+data_clean <- data_clean %>% 
+              filter(application_type =="INDIVIDUAL") %>% 
+              select(-application_type)
+  
+```
+
+
+```{r Generate excel sheet with statistical summary, echo=FALSE}
+
+# Generate the summary table for quantitative variable 
+
+# 2 functions to generate na colums if missing in order to always have 7 colums
+add_na_col <- function(x){
+  mutate(x, na = 0)
+}
+
+has_n_col <- function(x, n = 6){
+  return(ncol(x) == n)
+}
+
+data_sheet <- data_clean %>% 
+              select_if(is.numeric) %>% 
+              purrr::map(~ tidy(summary(.x))) %>%
+  # if a list element has 6 colums, then we know there is no NA-column.
+  # In this case, add_na_col, else not.
+              map_if(., has_n_col, add_na_col) %>% 
+              do.call(rbind, .)
+
+# write.xlsx(data_sheet,
+      #     "../../data_description/LCDataDescription_final.xlsx",
+      #     sheetName="Summary statistics", 
+       #    col.names=TRUE, row.names=TRUE, append=TRUE)
+            
+
+```
+
+
+L'étude macroscopique de quelques mesures clés nous apporte une vision globale sur Lending Club et les emprunts/prêts (ces termes seront utilisés indifféremment par la suite) réalisés.
+
+$`r data_clean %>%  summarize(sum = sum(loan_amnt)) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` ont été investis entre 2007 et 2015 avec un montant de prêt de $`r data_clean %>%  summarize(mean = mean(loan_amnt)) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` en moyenne. 
+50% des prêts sont accordés pour des montants entre $`r data_clean %>%  summarize(first_quart =  quantile(loan_amnt, 0.25)) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` et $`r data_clean %>%  summarize(third_quart =  quantile(loan_amnt, 0.75)) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)` avec un montant maximal de $ `r data_clean %>%  summarize(max =max(loan_amnt)) %>% unlist() %>% format(big.mark = " ", scientific = FALSE)`. (Toutes les statistiques liées aux variables quantitatives sont détaillées dans le fichier LCDataDecription_final.xlsx)
+
+## Evolution du business {.tabset .tabset-fade .tabset-pills}
+
+On constate une évolution exponentielle de la valeur des emprunts émis. En effet, Lending Club est passé d'environ $100M empruntés en 2013 à environ $600M en fin 2015 (soit une croissance de 500% en 3 ans).
+
+### Graphique
+
+```{r graph Business evolution}
+
+# themes installation for graphs
+devtools::install_github("hrbrmstr/hrbrthemes")
+library(hrbrthemes)
+
+# Million dollars format
+format_million_dollars <- function (x) {
+                       x <- paste("$",format(round(x / 1e6, 1),
+                                  trim = FALSE, scientific = FALSE, big.mark = " "), 
+                                  "M", sep="")
+}
+
+format_non_scientific <- function (x) {
+                       x <- format(x, trim = FALSE,
+                                   scientific = FALSE, big.mark = " ")
+}
+
+amnt_df <- data_clean %>% 
+           select(issue_d, loan_amnt) %>% 
+           group_by(issue_d) %>% 
+           summarise(Amount = sum(loan_amnt))
+
+ ggplot(amnt_df,aes(x = issue_d, y = Amount)) +
+  geom_line() + 
+  scale_y_continuous(labels = format_million_dollars) +
+  labs(x="Date d'emission des emprunts",
+       y= "Montant des emprunts",
+       title="Evolution des montants empruntés de 2007 à 2016 ",
+       subtitle= "Une plateforme en pleine croissance") +
+   theme_ipsum()
+
+```
+
+### Données
+
+```{r}
+amnt_df %>%  DT::datatable()
+```
+
+
+## Analyse par état {.tabset .tabset-fade .tabset-pills}
+
+Le business de Lending Club est presque entièrement concentré sur la Californie, New York et le Texas que ce soit en valeur ou en volume (la Californie s'explique sans doute par le fait que le siège social se situe à San Francisco).
+
+### Graphique en Valeur
+
+```{r graph Loan amount by state}
+
+# Calculate the sum of loan amount per state
+
+data_state <- data_clean %>% 
+              rename(Abbreviation = addr_state)
+
+state_by_value <- data_state %>% 
+                  group_by(Abbreviation) %>%
+                  summarise(value = sum(loan_amnt, na.rm=TRUE))
+
+# Read the file where we can find for each abbreviation, the corresponding full state name 
+
+full_name_state <- read_csv("../resources/full_name_state.csv")
+
+# Matching our abbreviation with full name
+
+state_by_value <-  state_by_value %>% inner_join(full_name_state) %>% 
+                   select(-Abbreviation) %>% 
+                   mutate(region=State) %>% 
+                   select(-State)
+
+# Read the expected names for using the package
+
+full_region_vec <- rownames(state.x77)
+
+full_region_df <- as.data.frame(full_region_vec)
+colnames(full_region_df) <- "region"
+
+# Matching our names with the names expected 
+
+state_by_value <-  state_by_value %>% 
+                   inner_join(full_region_df) %>% 
+                   mutate(value= as.numeric(value))
+
+state_by_value <- state_by_value %>%
+                  mutate(region = str_to_lower(region))
+
+# Plot creation 
+
+map_value <- ggplot(state_by_value, aes(map_id = region)) + 
+  # map points to the fifty_states shape data
+             geom_map(aes(fill = value), map = fiftystater::fifty_states) + 
+             expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+             coord_map() +
+             scale_x_continuous(breaks = NULL) + 
+             scale_y_continuous(breaks = NULL) +
+             scale_fill_continuous(name = "Montant emprunté", labels = format_million_dollars)+
+             labs(x = "",
+                  y = "", 
+                  title="Montant emprunté par état",
+                  subtitle = "Les emprunts sont réalisés 
+                  majoritairement dans l'état de New York, en Californie et au Texas") +
+             theme_ipsum()
+
+map_value
+
+```
+
+### Graphique en Volume 
+
+```{r graph Loan number by State}
+
+
+format_non_scientific <- function (x) {
+                       x <- format(x, trim = FALSE, scientific = FALSE, big.mark = " ")
+}
+
+data_state <- data_clean %>% 
+  mutate(Abbreviation = addr_state)
+
+
+state_by_volume <- data_state %>% 
+                   group_by(Abbreviation) %>%
+                   summarise(value = n())
+
+state_by_volume <-  state_by_volume %>% 
+                    inner_join(full_name_state) %>%
+                    select(-Abbreviation) %>% 
+                    mutate(region=State) %>% 
+                    select(-State)
+
+state_by_volume <-  state_by_volume %>% 
+                    inner_join(full_region_df) %>% 
+                    mutate(value= as.numeric(value))
+
+state_by_volume <- state_by_volume %>%
+                   mutate(region = str_to_lower(region))
+
+map_volume <- ggplot(state_by_volume, aes(map_id = region)) + 
+  # map points to the fifty_states shape data
+              geom_map(aes(fill = value), map = fiftystater::fifty_states) + 
+              expand_limits(x = fifty_states$long, y = fifty_states$lat) +
+              coord_map() +
+              scale_x_continuous(breaks = NULL) + 
+              scale_y_continuous(breaks = NULL) +
+              scale_fill_continuous(name = "Nombre d'emprunts", labels = format_non_scientific) +
+              labs(x = "",
+                   y = "",
+                   title="Nombre d'emprunts par état") +
+             theme_ipsum()
+
+map_volume
+
+```
+
+
+
+
+## Les raisons qui poussent à emprunter {.tabset .tabset-fade .tabset-pills}
+
+Maintenant qu'on sait que Lending Club est en progression constante, on peut s'interroger sur les motifs qui poussent les personnes à emprunter. On constate alors que la très grande majorité des emprunts sont cherchent à rembourser des dettes précédemment contractés. 
+
+### Graphique
+
+```{r Frequency of Loan purpose}
+
+ data_clean %>% 
+            mutate(purpose = as.factor(purpose)) %>% 
+            count(purpose)  %>% 
+            mutate(purpose= forcats::fct_reorder(purpose, n)) %>% 
+            ggplot(aes(purpose, n, fill=purpose)) + 
+                   geom_bar(stat = "identity") +
+                   coord_flip() +
+                   labs(x = "Motif d'emprunt" , 
+                        y = "Fréquence", 
+                        title = "Nombre d'observations pour chaque motif d'emprunt",
+                        subtitle = "Plus de la moitié des emprunts servent à consolider des dettes") +
+                   scale_y_continuous(labels = format_non_scientific) +
+                   theme_ipsum() +
+                   theme(legend.position='none')
+  
+
+
+```
+
+### Données 
+
+
+```{r}
+data_clean %>% 
+            mutate(purpose = as.factor(purpose)) %>%
+            count(purpose) %>% DT::datatable()
+```
+
+
+
+## Montant des emprunts en fonction des enjeux {.tabset .tabset-fade .tabset-pills}
+
+Il est aussi interessant de voir que les montants des emprunts pour de la consolidation de dettes et les cartes de crédit ont une médiane plus élevée que les emprunts effectués pour d'autres raisons. 
+
+### Graphique 
+
+```{r graph Loan amount by purpose}
+
+data_clean %>% 
+          mutate(purpose= forcats::fct_reorder(purpose, loan_amnt)) %>% 
+          ggplot(aes(x = purpose, y = loan_amnt, fill=purpose)) + 
+          geom_boxplot() + 
+          coord_flip() +
+          labs(x =  "Motif d'emprunt", 
+               y = "Montant de l'emprunt ($)", 
+               title = "Montant emprunté par motif",
+               subtitle = "Des montants empruntés plus importants quant il s'agit\nde consolider ses dettes" ) +
+            scale_y_continuous(labels = format_non_scientific) +
+            theme_ipsum() +
+            theme(legend.position='none')
+
+```
+
+
+### Données
+
+```{r Loan amount by purpose data}
+data_clean %>% 
+        mutate(purpose = as.factor(purpose)) %>% 
+        group_by(purpose) %>% 
+        summarise(median = median(loan_amnt)) %>% 
+        arrange(desc(median)) %>% 
+        DT::datatable()
+
+```
+
+## Durée des prêts {.tabset .tabset-fade .tabset-pills}
+
+De plus, un montant plus élevé implique souvent un prêt d'une durée plus longue. 
+
+### Graphique
+
+```{r Boxplot Loan amount by term}
+
+data_clean %>% 
+           mutate(term=as.factor(term)) %>% 
+           ggplot(aes(term, loan_amnt)) +
+           geom_boxplot(aes(fill = term)) +
+           labs(title = "Montant de l'emprunt en fonction\nde la durée du prêt",
+                x = "Durée (mois)",
+                y = "Montant ($)") +
+           scale_y_continuous(labels = format_non_scientific) +
+           scale_fill_discrete(name = "durée (mois)") +
+           theme_ipsum() +
+           theme(legend.position = "none")
+
+```
+
+### Données
+
+```{r}
+data_clean %>% 
+        mutate(term = as.factor(term)) %>% 
+        group_by(term) %>% 
+        summarise(median = median(loan_amnt)) %>% 
+        arrange(desc(median)) %>% 
+        DT::datatable()
+```
+
+
+## Les freins à l'emprunt
+
+Même si certaines raisons necessitent sans doute des emprunts plus elevés, il semble que les montants des prêts ne puissent généralement pas dépasser 0,55 fois le salaire de l'emprunteur. Il faut cependant utliser ces informations avec précautions car le salaire est fourni par l'emprunteur et nous ne savons pas lesquels ont été vérifiés (on trouve par exemple des rêveurs avec un salaire de 9 millions de dollars).
+
+```{r graph Loan amount compared to Annual Income}
+
+data_clean %>% 
+           mutate(term = as.factor(term)) %>% 
+           filter(annual_inc < 500000) %>% 
+           ggplot(aes(x = annual_inc, y = loan_amnt, color = term)) +
+                    geom_point() +
+                    geom_abline(intercept = 0, slope = 0.55, color="black") +
+                    labs(x = "Salaire annuel ($)",
+                         y = "Montant de l'emprunt ($)",
+                         title = "Montant de l'emprunt en fonction du salaire") +
+                    scale_y_continuous(labels = format_non_scientific) +
+                    scale_x_continuous(labels = format_non_scientific) +
+                    scale_fill_discrete(name = "durée (mois)") +
+                    theme_ipsum()
+      
+
+```
+
+
+# Analyse des investissements 
+
+Le point de vue des emprunteurs étant biensur très interessant, revenons à nos moutons du coté investisseur : si j'investis chez Lending Club, qu'est-ce que j'y gagne et comment je gagne? 
+
+Les données contiennent des prêts émis depuis juin 2007 jusqu'à décembre 2015 et le dernier paiement a lieu le 1er janvier 2016. Ceci signifie que pour de nombreux prêts, on ne connait pas l'issue (impayé (Charged Off) vs payé (Fully Paid)) du prêt. Pour analyser le retour sur investissement, il faudra travailler sur une période de temps où les crédit sont arrivés à leur terme (payés ou impayés) : nous avons choisis de ne garder que les prêts issus avant Juin 2012 pour les termes de 36 mois (soit 36 + 6 mois avant 2016) et avant Juin 2010 pour les termes de 60 mois (soit 60 + 6 mois avant 2016). 
+
+```{r Filtering current and non-finished loans}
+
+data_roi_analysis <- data_clean %>%
+                     filter(loan_status %in%
+                              c("Charged Off", 
+                                "Default", 
+                                "Fully Paid", 
+                                "In Grace Period",
+                                "Late (16-30 days)",
+                                "Late (31-120 days)")) %>% 
+                     filter(term==36 &
+                              issue_d<ymd("2012-06-01") | 
+                             term==60 & 
+                              issue_d<ymd("2010-06-01")) %>% 
+                     filter(loan_amnt==funded_amnt)
+  
+
+```
+
+## Calcul des retours sur investissement théoriques et réels 
+
+Afin de comparer les différents prêts, nous avons besoin de nouvelles variables mesurant le retour sur investissment réel et théorique.
+
+Ces nouvelles variables sont calculées de la manière suivante: 
+
+* Le retour sur investissement total théorique: theo_roi = (installment*term - loan_amnt) / loan_amnt
+* Le retour sur investissement constaté à la fin du prêt: real_roi = (total_pymnt - loan_amnt) / loan_amnt
+
+* Le retour sur investissement annuel théorique: theo_annual_roi= (theo_roi + 1)^ (12/term) -1) 
+* Le retour sur investissement annuel constaté: real_annual_roi= (real_roi + 1)^ (12/term) -1) 
+
+
+
+```{r}
+
+# Investor theoretical and actual ROI
+
+data_roi <- data_roi_analysis %>% 
+  mutate(theo_roi = (installment*term - loan_amnt) / loan_amnt) %>% 
+  mutate(real_roi= (total_pymnt - loan_amnt) / loan_amnt) %>% 
+  mutate(real_annual_roi= (real_roi + 1)^ (12/term) -1) %>% 
+  mutate(theo_annual_roi= (theo_roi + 1)^ (12/term) -1)
+
+```
+
+Maintenant que nous avons toutes les informations de ce qui auraient pu se passer et de ce qui s'est réellement passer, Let's start the game!  
+
+## Investissement aléatoire 
+
+Imaginons une situation où vous êtes riche et vous avez 100 000 dollars à investir (j'aurais pu vous imaginer plus riche mais c'est un bon début). Vous me confiez cet argent pour que je l'investisse pour vous chez Lending Club. En revanche je ne connais rien à la finance (ah si, je sais qu'il ne faut pas mettre tous ses oeufs dans le même panier) mais étant assez chanceuse, j'ai envie de tenter le coup. 
+
+Je vais donc investir au hasard 2 000 dollars sur 50 crédits de 36 mois. 
+
+Avec cet investissment j'aurais du vous faire gagner en théorie plus de 18 000 dollars mais j'ai enfait gagner $7 136, soit moins de la moitié du gain potentiel. Ce n'est pas si mal, j'ai un retour sur investissement de 7% me direz-vous mais j'aurais pu faire beaucoup mieux.  
+```{r Random investment }
+
+set.seed(120)
+
+# 
+
+data_random <- data_roi %>% filter(loan_amnt > 2000, term == 36) %>%
+               sample_n(50) %>% 
+               mutate(theo_win = theo_roi * 2000) %>% 
+               mutate(real_win = real_roi * 2000)
+               
+data_random %>% 
+  summarise(sum_theo= round(sum(theo_win)), sum_real = round(sum(real_win))) %>% 
+  setnames(c("gain théorique", "gain réel")) %>% 
+  DT::datatable()
+            
+
+```
+
+Ce différentiel s'explique en partie par le fait que sur les 50 crédits j'en ai tout de même 8 (soit 16%) qui ont fait défauts(faire défaut signifiant que le prêt n'a pas été remboursé en totalité et que le dernier paiement a été effectué il y a plus de 6 mois) et tous sauf 1 m'ont fait perdre de l'argent. Il y a donc bien un risque de perdre de l'argent en investissant sur un prêt. 
+
+```{r}
+# Number of Charged off and fully paid in my investment 
+
+data_random %>% 
+  count(loan_status) %>% 
+  setnames(c("statut du prêt", "nombre")) %>% 
+  DT::datatable()
+
+#Win or loss amongst Charged Off loans 
+data_random %>% 
+  filter(loan_status == "Charged Off") %>% 
+  select(theo_win, real_win) %>% 
+  mutate(theo_win = round(theo_win, 2), real_win = round(real_win, 2)) %>% 
+  setnames(c("gain théorique", "gain réel")) %>% 
+  DT::datatable()
+```
+
+### Quel est le risque de défaut? {.tabset .tabset-fade .tabset-pills}
+
+Un peu moins de 12% des crédits font défauts au total. Avec mes 16 % de défauts, je n'ai pas autant de chance que ce que j'imaginais. 
+
+
+#### Graphique général 
+
+```{r}
+data_roi %>% 
+  count(loan_status) %>%
+  mutate(freq = n / sum(n)* 100) %>% 
+  mutate(pos = cumsum(freq)- freq/2) %>% 
+  ggplot(aes(x = "", y = freq, fill = loan_status))  +
+       geom_bar(width = 1, stat = "identity") +
+       coord_polar("y", start=0) +
+       labs(title = "Proportion du statut des prêts") +
+   geom_text(aes(label = round(freq)), position = position_stack(vjust = 0.5)) +
+   scale_fill_discrete(name = "Statut") +
+  theme_ipsum()
+```
+
+#### Données
+
+```{r}
+data_roi %>% 
+  count(loan_status) %>%
+  mutate(freq = round(n / sum(n)* 100, 2)) %>% 
+  DT::datatable()
+
+```
+
+
+
+### Comment le risque de défaut est modélisé par Lending Club ?
+
+#### L'influence des notes Lending Club sur le défaut
+
+On visualise assez logiquement que plus un crédit a une "mauvaise note" (A étant la meilleure note et G ) selon Lending Club et plus la proportion de crédits qui font défauts est élevée. La note modélise bien une partie du risque. Alors pourquoi investir sur des prêts plus risqués ? 
+
+```{r  Barplot Loan Status by Grade}
+
+data_roi %>% 
+  mutate(grade = as.factor(grade)) %>% 
+  ggplot(aes(x = grade, fill = loan_status)) +
+  geom_bar() +
+  labs(x = "Notes",
+       y = "Nombre d'observations",
+       title = "Proportion de défaut par note",
+       subtitle = "Plus la note est mauvaise et plus la proportion 
+       de prêts qui font défauts est importante") +
+  scale_y_continuous(labels = format_non_scientific) +
+  scale_fill_discrete(name = "Statut") + 
+  theme_ipsum() +
+  theme(legend.position = "none")
+
+
+```
+
+#### Le ROI en fonction des notes {.tabset .tabset-fade .tabset-pills}
+
+ Dommage pour nous, Lending Club a bien fait son travail car plus la note est mauvaise et plus le roi théorique est important, voilà ce que nous avons à gagner. En terme réel, la même relation se concretise et plus la note est faible, plus la dispersion vers des ROIs négatifs accroit. 
+ Il faut donc envisager un trade off entre le risque et le gain selon sa propsension/aversion au risque. 
+
+##### ROI Théorique
+```{r}
+# Boxplot ROI by Grade
+
+data_roi %>% 
+  ggplot(aes(x = grade, y = theo_roi, fill = grade)) +
+           geom_boxplot() +
+           labs(x = "Note",
+                y = "ROI théorique",
+                title = "ROI théorique par note",
+                subtitle = "Une relation inversement proportionnelle entre les ROIs et les notes") +
+          scale_fill_discrete(name = "Note") +
+   theme_ipsum()
+```
+
+
+##### ROI réel
+```{r}
+# Boxplot real roi by Grade
+
+data_roi %>% 
+  ggplot(aes(x = grade, y = real_roi, fill = grade)) +
+           geom_boxplot() +
+           labs(x = "Note",
+                y = "ROI réel",
+                title = "ROI réel par note",
+                subtitle = "Une relation inversement proportionnelle") +
+           scale_fill_discrete(name = "Note") +
+   theme_ipsum()
+```
+
+### Le défaut est-il toujours une mauvaise chose ? 
+
+Dans le cas particulier de mon investissement, les 10 prêts qui ont rapporté les plus n'ont pas de notes supérieures à C. Un crédit en défaut peut également être un bon investissement en fonction du montant remboursé et des frais de retard de paiement. 
+
+```{r Real win compared to grades}
+
+data_random %>%
+    select(grade, real_win, theo_win, loan_status) %>%
+    mutate (real_win = round(real_win, 2), theo_win = round(theo_win, 2)) %>% 
+    arrange(desc(real_win)) %>% 
+    setnames(c("Note", "Gain réel", "Gain théorique", "Statut du prêt")) %>%
+    DT::datatable()
+
+```
+
+### Le remboursement total est-il toujours une bonne chose ? 
+
+Il faut cependant être attentif à un autre facteur important: tous les emprunts entièrement remboursés ne rapportent pas autant qu'ils auraient du en théorie. 
+Si tous les crédits avaient un roi théorique et réel similaires, tous les points bleus devraient se situer sur la bissectrice de notre graphique. Mais alors pourquoi y a t'il une telle différence? 
+
+
+```{r Theo vs real Roi according to loan status}
+
+data_roi %>% 
+  ggplot(aes(x = theo_roi, y = real_roi, color = loan_status)) +
+           geom_point() +
+           labs(x = "ROI théorique",
+                y = "ROI réel",
+                title = "ROI théorique vs ROI réel\nen fonction du statut du prêt",
+                subtitle = "Une partie des prêts remboursés rapportent moins qu'ils ne devraient") +
+           geom_abline(intercept = 0, slope = 1) +
+           scale_color_discrete(name = "Statut") + 
+   theme_ipsum()
+
+```
+
+#### Remboursements anticipés  
+
+ce phénomème s'explique nottement par le fait que certains prêts sont remboursés avant la fin de leur échance par conséquent la somme des intérêts perçus par l'investisseur est plus faible. 
+
+```{r  Histogram of prepayments }
+
+data_roi_late <- data_roi %>% 
+  mutate(loan_end= issue_d + term*30.4375) %>% # Theoretical end date of the loan  
+  mutate(early_days= loan_end - last_pymnt_d) # Number of days 
+
+# Filter on fully paid loans 
+
+fully_paid <- data_roi_late %>% 
+  filter(loan_status=="Fully Paid")
+
+# Histogram
+
+ggplot(fully_paid, aes(x=round(as.numeric(early_days)/30.4375))) +
+        geom_histogram(bins = max(fully_paid$early_days)) +
+        scale_y_continuous(labels = format_non_scientific) +
+        labs(x = "Nombre de mois d'anticipation",
+             y = "Nombre d'observations",
+             title = "Distribution des remboursements anticipés",
+             subtitle = "Un nombre non négligeable de paiements anticipés") +
+   theme_ipsum()
+
+```
+
+
+# Conclusion  
+ 
+Maintenant que j'ai toutes ces informations en tête, plusieurs possibilités s'offrent à moi afin d'améliorer ma stratégie d'investissement et donc de vous faire gagner plus d'argent:
+
+La première solution serait d'adopter une stratégie de gestion des risques financiers (appelée Risk Return Trade Off). Il s'agira alors (plus ou moins) d'associer un risque à chaque prêt et de créer un bouquet de prêts qui minimiseront mes risques tout en maximisant mon espérance de gain. 
+Pour cela, je devrais étudier la théorie du portefeuille moderne de Markowitz ainsi que toutes celles liées à l'asset management. Bien que ces théories sont sans doute passionantes, le temps d'aboutir à une stratégie et à un résulat satisfaisant, vous aurez sans doute trouvé quelqu'un d'autre à qui confier votre argent. 
+
+De plus, ne serait-ce pas mieux si on pouvait élimer presque entièrement le risque ?  Si je savez à l'avance quels prêts font faire défaut alors, je pourrais opter pour les prêts qui ont le plus gros retour sur investissement sans jamais prendre de risque. Ma deuxième solution consiste donc à prédire rapidement les prêts qui vont faire défaut ou non. 
+
+Cependant, même si cette solution peut être très satifaisante et vous faire gagner beaucoup d'argent, quelque chose me chagrine encore un peu. Je sais que certains prêts qui font défauts peuvent me faire gagner beaucoup d'argent et je sais également que certains prêts remboursés ne rapportent pas autant que prévus.
+Ceci étant dit, je me rends compte que ce que je veux vraiment c'est prédire le retour sur investissment de chaque prêt. Cette stratégie me permettrait de savoir exactement combien je peux espérer gagner sur chaque investissment et par conséquent, il me suffirait d'investir sur les prêts qui rapporteront le plus et le tour est joué. 
+
+Je me mets en route pour la prédiction et vous serez bientôt millionaire!

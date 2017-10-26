@@ -1,0 +1,68 @@
+body {
+  background-color: #F2F2F2;
+}
+
+h1{
+  border-bottom-style: solid;
+  font-size:35px;
+}
+
+h2{
+  font-size:30px;
+}
+
+h3{
+  font-size:25px;
+}
+
+h4{
+  font-size:20px;
+}
+
+h5{
+  font-size:20px;
+}
+
+p code {
+  white-space: inherit;
+}
+pre {
+  word-break: normal;
+  word-wrap: normal;
+}
+pre code {
+  white-space: inherit;
+}
+
+.list-group-item.active, .list-group-item.active:focus, .list-group-item.active:hover {
+z-index: 2;
+color: #FFED00;
+background-color: black;
+border-color: black;
+}
+
+a {
+color: black;
+background-color: white;
+text-decoration: none;
+border-color: black;
+}
+
+.nav-pills>li.active>a, .nav-pills>li.active>a:focus, .nav-pills>li.active>a:hover {
+color: #FFED00;
+background-color: black;
+
+}
+
+h4.author {
+	font-size: 15px;
+}
+
+h4.date {
+	font-size: 15px;
+}
+
+
+.main-container .row-fluid .col-md-3 {
+	float:right;
+}
